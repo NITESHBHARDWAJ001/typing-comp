@@ -1,0 +1,840 @@
+openapi: 3.0.0
+info:
+  title: Typing Competition API
+  version: 1.0.0
+  description: |
+    API documentation for the College TechFest Typing Competition Platform. 
+    This platform enables organizers to create typing competitions, manage participants, 
+    track performance metrics, and analyze competition data in real-time.
+    
+    ## Features
+    - JWT-based authentication for organizers
+    - Real-time competition management with Socket.IO
+    - Comprehensive analytics and reporting
+    - Export rankings in CSV/JSON formats
+    - Performance trend analysis
+    
+    ## Authentication
+    Most endpoints require authentication. Use the `/api/auth/login` endpoint to obtain a JWT token,
+    then include it in the Authorization header as `Bearer <token>`.
+  contact:
+    name: API Support
+    url: https://github.com/saurabh-dev-vns/typing-comp
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local Development Server
+  - url: http://localhost:3001
+    description: Alternative Development Server
+
+tags:
+  - name: Authentication
+    description: Organizer authentication and user management endpoints
+  - name: Competitions
+    description: Competition creation and management endpoints
+  - name: Export
+    description: Export competition rankings and results in various formats
+  - name: Analytics
+    description: Competition analytics and performance metrics
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from the login endpoint.
+        
+        To use: Include the token in the Authorization header as `Bearer <your_token>`
+
+  schemas:
+    Organizer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 507f1f77bcf86cd799439011
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        createdAt:
+          type: string
+          format: date-time
+        lastLogin:
+          type: string
+          format: date-time
+
+    Competition:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 507f1f77bcf86cd799439011
+        name:
+          type: string
+          example: Spring Typing Championship
+        code:
+          type: string
+          example: ABC123
+          description: Unique 6-character code for participants to join
+        description:
+          type: string
+          example: College typing speed contest
+        organizerId:
+          type: string
+        organizer:
+          type: string
+          example: John Doe
+        status:
+          type: string
+          enum: [pending, ongoing, completed]
+        participants:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              socketId:
+                type: string
+              joinedAt:
+                type: string
+                format: date-time
+        rounds:
+          type: array
+          items:
+            type: object
+            properties:
+              roundNumber:
+                type: number
+              text:
+                type: string
+              duration:
+                type: number
+              status:
+                type: string
+                enum: [pending, in-progress, completed]
+        createdAt:
+          type: string
+          format: date-time
+
+    Round:
+      type: object
+      required:
+        - text
+        - duration
+      properties:
+        text:
+          type: string
+          example: The quick brown fox jumps over the lazy dog
+          description: Text that participants need to type
+        duration:
+          type: number
+          example: 60
+          description: Duration in seconds
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: Error message
+        message:
+          type: string
+          example: Detailed error description
+
+    AnalyticsOverview:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            competitions:
+              type: object
+              properties:
+                total:
+                  type: number
+                  example: 10
+                active:
+                  type: number
+                  example: 3
+                completed:
+                  type: number
+                  example: 7
+            participants:
+              type: object
+              properties:
+                total:
+                  type: number
+                  example: 45
+                average:
+                  type: number
+                  example: 5
+            performance:
+              type: object
+              properties:
+                avgWPM:
+                  type: number
+                  example: 78
+                maxWPM:
+                  type: number
+                  example: 120
+                minWPM:
+                  type: number
+                  example: 35
+
+paths:
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new organizer account
+      description: |
+        Create a new organizer account with email and password. 
+        Returns JWT token upon successful registration.
+        
+        **Password Requirements:**
+        - Minimum 6 characters
+        
+        **Email Requirements:**
+        - Valid email format
+        - Must be unique (not already registered)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  example: John Doe
+                  description: Full name of the organizer
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                  description: Email address (must be unique)
+                password:
+                  type: string
+                  minLength: 6
+                  example: password123
+                  description: Password (minimum 6 characters)
+      responses:
+        '201':
+          description: Organizer registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    description: JWT token for authentication
+                  organizer:
+                    $ref: '#/components/schemas/Organizer'
+        '400':
+          description: Validation error or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingFields:
+                  value:
+                    error: Name, email, and password are required
+                passwordTooShort:
+                  value:
+                    error: Password must be at least 6 characters
+                emailExists:
+                  value:
+                    error: Email already registered
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login as an organizer
+      description: |
+        Authenticate organizer with email and password. 
+        Returns JWT token on success that should be used for subsequent authenticated requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  example: password123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    description: JWT token (valid for 24 hours by default)
+                  organizer:
+                    $ref: '#/components/schemas/Organizer'
+        '400':
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid email or password
+        '500':
+          description: Server error
+
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current organizer information
+      description: Retrieve the authenticated organizer's profile information including account details and login history
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organizer information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  organizer:
+                    $ref: '#/components/schemas/Organizer'
+        '401':
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Organizer not found
+        '500':
+          description: Server error
+
+  /api/create:
+    post:
+      tags:
+        - Competitions
+      summary: Create a new competition
+      description: |
+        Create a new typing competition with multiple rounds. 
+        Automatically generates a unique 6-character code for participants to join.
+        Requires authentication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - rounds
+              properties:
+                name:
+                  type: string
+                  example: Spring Typing Championship 2026
+                  description: Name of the competition
+                description:
+                  type: string
+                  example: Annual college typing speed contest
+                  description: Optional description
+                rounds:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/Round'
+                  example:
+                    - text: The quick brown fox jumps over the lazy dog
+                      duration: 60
+                    - text: Programming is the art of telling another human what one wants the computer to do
+                      duration: 90
+      responses:
+        '201':
+          description: Competition created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  competition:
+                    $ref: '#/components/schemas/Competition'
+        '400':
+          description: Validation error - missing required fields
+        '401':
+          description: Unauthorized - Invalid or missing token
+        '500':
+          description: Server error
+
+  /api/competition/{code}:
+    get:
+      tags:
+        - Competitions
+      summary: Get competition by code
+      description: Retrieve competition details using the unique competition code
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+          example: ABC123
+          description: Unique 6-character competition code
+      responses:
+        '200':
+          description: Competition found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Competition'
+        '404':
+          description: Competition not found
+        '500':
+          description: Server error
+
+  /api/analytics/overview:
+    get:
+      tags:
+        - Analytics
+      summary: Get analytics overview
+      description: |
+        Retrieve comprehensive statistics including:
+        - Total competitions (active, completed)
+        - Total participants and averages
+        - Performance metrics (avg WPM, max WPM, min WPM)
+        
+        Only shows data for competitions created by the authenticated organizer.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Analytics overview retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsOverview'
+        '401':
+          description: Unauthorized - Invalid or missing token
+        '500':
+          description: Server error
+
+  /api/analytics/competitions:
+    get:
+      tags:
+        - Analytics
+      summary: Get detailed competition statistics
+      description: |
+        Retrieve analytics for each competition including:
+        - Participant counts
+        - Number of rounds
+        - Average WPM per competition
+        - Competition status and creation date
+        
+        Returns up to 20 most recent competitions.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Competition analytics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: Spring Typing Championship
+                        code:
+                          type: string
+                          example: ABC123
+                        status:
+                          type: string
+                          example: completed
+                        participants:
+                          type: number
+                          example: 15
+                        rounds:
+                          type: number
+                          example: 3
+                        avgWPM:
+                          type: number
+                          example: 85
+                        createdAt:
+                          type: string
+                          format: date-time
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error
+
+  /api/analytics/participants:
+    get:
+      tags:
+        - Analytics
+      summary: Get participant analytics
+      description: |
+        Retrieve participant distribution and top performer rankings:
+        - Top 10 competitions by participant count
+        - Top 10 performers by average WPM
+        - Performance statistics for each top performer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Participant analytics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      distribution:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            competition:
+                              type: string
+                              example: Spring Championship
+                            code:
+                              type: string
+                              example: ABC123
+                            participants:
+                              type: number
+                              example: 15
+                      topPerformers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                              example: John Doe
+                            avgWPM:
+                              type: number
+                              example: 95
+                            maxWPM:
+                              type: number
+                              example: 120
+                            totalRounds:
+                              type: number
+                              example: 5
+                            avgAccuracy:
+                              type: number
+                              example: 98
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error
+
+  /api/analytics/trends:
+    get:
+      tags:
+        - Analytics
+      summary: Get performance trends over time
+      description: |
+        Retrieve competition and performance trends for a specified time period.
+        Shows day-by-day statistics including competition counts, participant counts,
+        average WPM, and accuracy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: ['7', '30', '90', '365']
+            default: '30'
+          description: Number of days to analyze (7, 30, 90, or 365)
+          example: '30'
+      responses:
+        '200':
+          description: Trends retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      competitions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                              example: '2026-01-05'
+                            competitions:
+                              type: number
+                              example: 2
+                            participants:
+                              type: number
+                              example: 20
+                      performance:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                              example: '2026-01-05'
+                            avgWPM:
+                              type: number
+                              example: 85
+                            avgAccuracy:
+                              type: number
+                              example: 96
+                            totalTypists:
+                              type: number
+                              example: 15
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error
+
+  /api/export/{competitionId}/csv:
+    get:
+      tags:
+        - Export
+      summary: Export competition rankings as CSV
+      description: |
+        Download competition final rankings in CSV format. 
+        Includes rank, participant name, average WPM, accuracy, rounds completed, and highest WPM.
+        
+        **Access Control:** Only the competition owner can export rankings.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: competitionId
+          required: true
+          schema:
+            type: string
+          description: MongoDB ObjectId of the competition
+          example: 507f1f77bcf86cd799439011
+      responses:
+        '200':
+          description: CSV file downloaded successfully
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment filename
+              example: attachment; filename=spring_championship_rankings_2026-01-05.csv
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+              example: |
+                Rank,Participant Name,Average WPM,Average Accuracy,Rounds Completed,Highest WPM
+                1,John Doe,95,98.5%,3,120
+                2,Jane Smith,88,96.2%,3,105
+        '400':
+          description: No rankings available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: No rankings available. Competition may not be completed or has no participants.
+        '403':
+          description: Forbidden - Not the competition owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Competition not found
+        '500':
+          description: Server error
+
+  /api/export/{competitionId}/json:
+    get:
+      tags:
+        - Export
+      summary: Export competition rankings as JSON
+      description: |
+        Download competition final rankings in JSON format.
+        Includes complete competition details and rankings data.
+        
+        **Access Control:** Only the competition owner can export rankings.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: competitionId
+          required: true
+          schema:
+            type: string
+          description: MongoDB ObjectId of the competition
+      responses:
+        '200':
+          description: JSON data returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  competition:
+                    type: string
+                    example: Spring Typing Championship
+                  code:
+                    type: string
+                    example: ABC123
+                  exportDate:
+                    type: string
+                    format: date-time
+                  totalParticipants:
+                    type: number
+                    example: 15
+                  rankings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rank:
+                          type: number
+                        participantName:
+                          type: string
+                        averageWpm:
+                          type: number
+                        averageAccuracy:
+                          type: number
+                        roundsCompleted:
+                          type: number
+                        highestWpm:
+                          type: number
+        '400':
+          description: No rankings available
+        '403':
+          description: Forbidden - Not the competition owner
+        '404':
+          description: Competition not found
+        '500':
+          description: Server error
+
+  /api/export/{competitionId}/rounds/csv:
+    get:
+      tags:
+        - Export
+      summary: Export round-by-round results as CSV
+      description: |
+        Download detailed round-by-round results for each participant in CSV format.
+        Includes all rounds with individual WPM, accuracy, and timing data.
+        
+        **Access Control:** Only the competition owner can export results.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: competitionId
+          required: true
+          schema:
+            type: string
+          description: MongoDB ObjectId of the competition
+      responses:
+        '200':
+          description: CSV file with round details downloaded successfully
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment filename
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+              example: |
+                Round,Participant Name,WPM,Accuracy,Correct Chars,Total Chars,Errors,Time (seconds)
+                1,John Doe,95,98.5,250,254,4,60
+                1,Jane Smith,88,96.2,240,249,9,60
+        '400':
+          description: No rounds available
+        '403':
+          description: Forbidden - Not the competition owner
+        '404':
+          description: Competition not found
+        '500':
+          description: Server error

@@ -62,10 +62,16 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// API Documentation
+// API Documentation - Swagger UI
 const swaggerUi = require('swagger-ui-express');
-const swaggerSpec = require('./config/swagger');
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const YAML = require('yamljs');
+const path = require('path');
+const swaggerDocument = YAML.load(path.join(__dirname, '../swagger.yaml'));
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Typing Competition API Docs',
+}));
 
 // Middleware
 app.use(cors());
